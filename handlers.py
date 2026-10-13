@@ -1,4 +1,97 @@
-return await message.answer("Сначала выберите ваш класс!", reply_markup=get_classes_keyboard())
+from aiogram import Router, F
+from aiogram.filters import CommandStart
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from datetime import datetime
+import logging
+
+from database import db
+from config import settings
+from schedule import ScheduleManager
+
+logger = logging.getLogger(name)
+router = Router()
+scheduler = ScheduleManager(settings.SCHEDULE_FILE)
+
+# Список доступных дней для валидации ввода
+VALID_DAYS = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
+
+# Обновленное главное меню: теперь здесь 4 кнопки
+def get_main_keyboard() -> ReplyKeyboardMarkup:
+    kb = [
+        [KeyboardButton(text="Что сейчас?"), KeyboardButton(text="Расписание на сегодня")],
+        [KeyboardButton(text="Расписание на день"), KeyboardButton(text="Сменить класс")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
+def get_classes_keyboard() -> ReplyKeyboardMarkup:
+    classes = scheduler.get_all_classes()
+    if not classes:
+        return ReplyKeyboardRemove()
+    
+    buttons = [KeyboardButton(text=c) for c in classes]
+    rows = [buttons[i:i + 3] for i in range(0, len(buttons), 3)]
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+# Инлайн-подсказки с днями недели (без кнопки "Сегодня", так как для нее теперь есть отдельная кнопка в меню)
+def get_days_inline_keyboard() -> InlineKeyboardMarkup:
+    buttons = [
+        [
+            InlineKeyboardButton(text="Понедельник", callback_data="day_Понедельник"),
+            InlineKeyboardButton(text="Вторник", callback_data="day_Вторник")
+        ],
+        [
+            InlineKeyboardButton(text="Среда", callback_data="day_Среда"),
+            InlineKeyboardButton(text="Четверг", callback_data="day_Четверг")
+        ],
+        [
+            InlineKeyboardButton(text="Пятница", callback_data="day_Пятница"),
+            InlineKeyboardButton(text="Суббота", callback_data="day_Суббота")
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+@router.message(CommandStart())
+async def cmd_start(message: Message):
+    await message.answer(
+        "Привет! Я бот-расписание. Для начала работы выбери свой класс:",
+        reply_markup=get_classes_keyboard()
+    )
+
+@router.message(F.text == "Сменить класс")
+async def change_class(message: Message):
+    await message.answer("Выбери класс из списка:", reply_markup=get_classes_keyboard())
+
+@router.message(F.text == "Что сейчас?")
+async def what_is_now(message: Message):
+    user_class = await db.get_user_class(message.from_user.id)
+    if not user_class:
+        return await message.answer("Сначала выберите ваш класс!", reply_markup=get_classes_keyboard())
+    
+    now = datetime.now()
+    current_day = scheduler.days_mapping.get(now.weekday(), "Воскресенье")
+    current_time = now.time()
+
+    current_lesson, next_lesson = scheduler.get_lessons_for_time(user_class, current_day, current_time)
+
+    response = f"🏫 Класс: {user_class}\n🕒 Время: {current_time.strftime('%H:%M')} ({current_day})\n\n"
+    
+    if current_lesson:
+        response += f"📖 Сейчас идет: {current_lesson}\n"
+    else:
+        response += "📖 Сейчас идет: Перемена или уроков в это время нет\n"
+        
+    if next_lesson:
+        response += f"➡️ Следующий урок: {next_lesson}"
+    else:
+        response += "➡️ Следующий урок: Больше уроков сегодня не будет!"
+        
+    await message.answer(response, parse_mode="Markdown")
+
+# Кнопка 1: Сразу выводит расписание на текущий день без лишних вопросов
+@router.message(F.text == "Расписание на сегодня")
+async def day_schedule_today(message: Message):
+    user_class = await db.get_user_class(message.from_user.id)
+    if not user_class:return await message.answer("Сначала выберите ваш класс!", reply_markup=get_classes_keyboard())
     
     now = datetime.now()
     current_day = scheduler.days_mapping.get(now.weekday(), "Воскресенье")

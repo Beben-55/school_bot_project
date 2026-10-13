@@ -8,7 +8,7 @@ from database import db
 from config import settings
 from schedule import ScheduleManager
 
-logger = logging.getLogger(name)
+logger = logging.getLogger(__name__)
 router = Router()
 scheduler = ScheduleManager(settings.SCHEDULE_FILE)
 

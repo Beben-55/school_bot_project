@@ -1,77 +1,4 @@
-from aiogram import Router, F
-from aiogram.filters import CommandStart
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
-from datetime import datetime
-import logging
-
-from database import db
-from config import settings
-from schedule import ScheduleManager
-
-logger = logging.getLogger(__name__)
-router = Router()
-scheduler = ScheduleManager(settings.SCHEDULE_FILE)
-
-VALID_DAYS = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
-
-def get_main_keyboard() -> ReplyKeyboardMarkup:
-    kb = [
-        [KeyboardButton(text="Что сейчас?"), KeyboardButton(text="Расписание на сегодня")],
-        [KeyboardButton(text="Сменить класс")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
-
-def get_classes_keyboard() -> ReplyKeyboardMarkup:
-    classes = scheduler.get_all_classes()
-    if not classes:
-        return ReplyKeyboardRemove()
-    
-    buttons = [KeyboardButton(text=c) for c in classes]
-    rows = [buttons[i:i + 3] for i in range(0, len(buttons), 3)]
-    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
-
-@router.message(CommandStart())
-async def cmd_start(message: Message):
-    await message.answer(
-        "Привет! Я бот-расписание. Для начала работы выбери свой класс:",
-        reply_markup=get_classes_keyboard()
-    )
-
-@router.message(F.text == "Сменить класс")
-async def change_class(message: Message):
-    await message.answer("Выбери класс из списка:", reply_markup=get_classes_keyboard())
-
-@router.message(F.text == "Что сейчас?")
-async def what_is_now(message: Message):
-    user_class = await db.get_user_class(message.from_user.id)
-    if not user_class:
-        return await message.answer("Сначала выберите ваш класс!", reply_markup=get_classes_keyboard())
-    
-    now = datetime.now()
-    current_day = scheduler.days_mapping.get(now.weekday(), "Воскресенье")
-    current_time = now.time()
-
-    current_lesson, next_lesson = scheduler.get_lessons_for_time(user_class, current_day, current_time)
-
-    response = f"🏫 **Класс:** {user_class}\n🕒 **Время:** {current_time.strftime('%H:%M')} ({current_day})\n\n"
-    
-    if current_lesson:
-        response += f"📖 **Сейчас идет:** {current_lesson}\n"
-    else:
-        response += "📖 **Сейчас идет:** Перемена или уроков в это время нет\n"
-        
-    if next_lesson:
-        response += f"➡️ **Следующий урок:** {next_lesson}"
-    else:
-        response += "➡️ **Следующий урок:** Больше уроков сегодня не будет!"
-        
-    await message.answer(response, parse_mode="Markdown")
-
-@router.message(F.text == "Расписание на сегодня")
-async def day_schedule(message: Message):
-    user_class = await db.get_user_class(message.from_user.id)
-    if not user_class:
-        return await message.answer("Сначала выберите ваш класс!", reply_markup=get_classes_keyboard())
+return await message.answer("Сначала выберите ваш класс!", reply_markup=get_classes_keyboard())
     
     now = datetime.now()
     current_day = scheduler.days_mapping.get(now.weekday(), "Воскресенье")
@@ -79,6 +6,36 @@ async def day_schedule(message: Message):
     text = scheduler.get_full_day_schedule(user_class, current_day)
     await message.answer(text)
 
+# Кнопка 2: Новая отдельная кнопка, которая предлагает выбрать конкретный день
+@router.message(F.text == "Расписание на день")
+async def day_schedule_prompt(message: Message):
+    user_class = await db.get_user_class(message.from_user.id)
+    if not user_class:
+        return await message.answer("Сначала выберите ваш класс!", reply_markup=get_classes_keyboard())
+    
+    await message.answer(
+        "Выберите интересующий день недели:",
+        reply_markup=get_days_inline_keyboard()
+    )
+
+# Обработка кликов по инлайн-подсказкам дней недели
+@router.callback_query(F.data.startswith("day_"))
+async def process_day_callback(callback: CallbackQuery):
+    user_class = await db.get_user_class(callback.from_user.id)
+    if not user_class:
+        await callback.answer("Ошибка: Класс не выбран. Нажмите /start", show_alert=True)
+        return
+
+    # Получаем название дня из callback_data (например "Понедельник" из "day_Понедельник")
+    selected_day = callback.data.replace("day_", "")
+
+    text = scheduler.get_full_day_schedule(user_class, selected_day)
+    
+    # Меняем текст сообщения с кнопками на само расписание
+    await callback.message.edit_text(text)
+    await callback.answer()
+
+# Хэндлер для ручного ввода данных
 @router.message(F.text)
 async def handle_text(message: Message):
     text = message.text.strip()
@@ -112,7 +69,7 @@ async def handle_text(message: Message):
             target_time = datetime.strptime(target_time_str, "%H:%M").time()
             current_lesson, next_lesson = scheduler.get_lessons_for_time(user_class, target_day, target_time)
             
-            response = f"🔍 Расписание для **{user_class}** на день: **{target_day}**, время: **{target_time_str}**:\n\n"
+            response = f"🔍 Расписание для {user_class} на день: {target_day}, время: {target_time_str}:\n\n"
             if current_lesson:
                 response += f"📖 Будет идти: {current_lesson}\n"
             else:
@@ -124,13 +81,13 @@ async def handle_text(message: Message):
             await message.answer(response, parse_mode="Markdown")
             return
         except ValueError:
-            await message.answer("Неверный формат времени. Пишите в формате `ЧЧ:ММ` (например, `14:20`).")
+            await message.answer("Неверный формат времени. Пишите в формате ЧЧ:ММ (например, 14:20).")
             return
 
     await message.answer(
         "Не понимаю команду.\n\n"
         "Вы можете:\n"
         "• Использовать кнопки меню\n"
-        "• Написать время: `14:20` (посмотрит на сегодня)\n"
-        "• Написать время и день: `14:20 Вторник` или `Среда 09:00`"
+        "• Написать время: 14:20 (посмотрит на сегодня)\n"
+        "• Написать время и день: 14:20 Вторник или Среда 09:00"
     )

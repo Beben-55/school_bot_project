@@ -79,7 +79,7 @@ class ScheduleManager:
 
             # Сортируем время уроков
             for key in self._schedule_cache:
-                self._schedule_cache[key].sort(key=lambda x: x[0])
+                self._schedule_cache[key].sort(key=lambda x: x)
                 
             logger.info("Успешно: База расписания оптимизирована и загружена в память через openpyxl!")
         except Exception as e:

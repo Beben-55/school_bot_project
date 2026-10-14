@@ -87,6 +87,7 @@ class ScheduleManager:
 
     def get_all_classes(self) -> List[str]:
         return sorted(list(self._teachers_cache.keys()))
+        
         def get_lessons_for_time(self, school_class: str, target_day: str, target_time: time) -> Tuple[Optional[str], Optional[str]]:
         key = (school_class.upper(), target_day.capitalize())
         lessons = self._schedule_cache.get(key, [])

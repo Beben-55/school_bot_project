@@ -2,12 +2,11 @@ import sqlite3
 from typing import Optional
 
 class SQLiteDB:
-    def init(self, db_path: str = "users.db"):
-        self.db_path = db_path
+    def __init__(self):
+        self.db_path = "users.db"
         self._init_db()
 
     def _init_db(self) -> None:
-        # Создаем таблицу пользователей, если её еще нет
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -32,7 +31,8 @@ class SQLiteDB:
             cursor = conn.cursor()
             cursor.execute("SELECT user_class FROM users WHERE user_id = ?", (user_id,))
             row = cursor.fetchone()
-            return row[0] if row else None
+            if row:
+                return row[0] # Исправлено: возвращаем чистую строку класса
+            return None
 
-# Создаем один глобальный объект базы данных
 db = SQLiteDB()

@@ -87,9 +87,11 @@ class ScheduleManager:
         lessons = self._schedule_cache.get(key, [])
         if not lessons:
             return f"На {target_day} расписание для класса {school_class} не найдено."
+        
+        # Оптимизированный компактный вывод без захламления именами учителей
         result = f"📅 Расписание на {target_day} ({school_class}):\n"
-        for i, (t_start, t_end, subject, teacher) in enumerate(lessons, 1):
-            result += f"{i}. {t_start.strftime('%H:%M')}-{t_end.strftime('%H:%M')} — {subject} ({teacher})\n"
+        for i, (t_start, t_end, subject, _) in enumerate(lessons, 1):
+            result += f"{i}. {t_start.strftime('%H:%M')}-{t_end.strftime('%H:%M')} — {subject}\n"
         return result
 
     def get_subjects_for_class(self, school_class: str) -> List[str]:

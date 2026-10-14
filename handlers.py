@@ -179,7 +179,8 @@ async def handle_text(message: Message):
     if target_time_str and not target_day:
         now = datetime.now(TIMEZONE)
         target_day = scheduler.days_mapping.get(now.weekday(), "Воскресенье")
-        if target_time_str:
+
+    if target_time_str:
         try:
             target_time = datetime.strptime(target_time_str, "%H:%M").time()
             current_lesson, next_lesson = scheduler.get_lessons_for_time(user_class, target_day, target_time)
